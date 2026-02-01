@@ -3,7 +3,7 @@
 //! Provides Claude SDK integration for complex conversions
 //! that can't be handled by deterministic Rosetta mappings.
 
-use crate::aisp::{ConversionResult, ConversionTier};
+use rosetta_aisp::{ConversionResult, ConversionTier, TokenStats};
 use anyhow::Result;
 use async_trait::async_trait;
 
@@ -44,7 +44,7 @@ impl LlmResult {
             confidence: 0.95, // LLM output assumed high confidence
             unmapped: vec![],
             tier,
-            tokens: crate::aisp::TokenStats {
+            tokens: TokenStats {
                 input: input_len,
                 output: self.output.len(),
                 ratio: if input_len == 0 {

@@ -160,14 +160,14 @@ async fn main() -> Result<()> {
                 _ => None, // auto-detect
             };
 
-            let options = gear_core::ConversionOptions {
+            let options = gear_core::ConversionOptionsExt {
                 tier: tier_opt,
                 confidence_threshold: Some(effective_threshold),
                 enable_llm_fallback: effective_fallback,
                 llm_model: effective_model,
             };
 
-            let result = gear_core::AispConverter::convert_async(&prose, Some(options)).await;
+            let result = gear_core::convert_with_fallback(&prose, Some(options)).await;
 
             if json {
                 let json_output = serde_json::to_string_pretty(&result)?;

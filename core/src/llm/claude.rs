@@ -4,11 +4,9 @@
 //! when deterministic Rosetta mappings have low confidence.
 
 use super::{LlmProvider, LlmResult};
-use crate::aisp::ConversionTier;
 use anyhow::Result;
 use async_trait::async_trait;
-
-use crate::aisp::rosetta::{get_all_categories, symbol_to_prose, symbols_by_category};
+use rosetta_aisp::{get_all_categories, symbol_to_prose, symbols_by_category, ConversionTier};
 
 /// Generate symbol reference grouped by category
 fn symbol_ref_grouped() -> String {
