@@ -17,12 +17,10 @@ name = "gear-core"
 path = "src/main.rs"
 
 [dependencies]
-# AISP conversion (rosetta-aisp provides core conversion, aisp provides validation)
+# AISP conversion with LLM fallback
 rosetta-aisp = { git = "https://github.com/epiphytic/rosetta-aisp.git" }
+rosetta-aisp-llm = { git = "https://github.com/epiphytic/rosetta-aisp-llm.git" }
 aisp = { version = "0.1", features = ["serde"] }
-
-# Claude SDK for LLM fallback
-claude-agent-sdk-rs = "0.6"
 
 # Async runtime
 tokio = { version = "1.49", features = ["full", "signal"] }
