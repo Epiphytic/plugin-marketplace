@@ -17,9 +17,9 @@ name = "gear-core"
 path = "src/main.rs"
 
 [dependencies]
-# AISP conversion with LLM fallback
-rosetta-aisp = { git = "https://github.com/epiphytic/rosetta-aisp.git" }
-rosetta-aisp-llm = { git = "https://github.com/epiphytic/rosetta-aisp-llm.git" }
+# AISP conversion with LLM fallback (from crates.io)
+rosetta-aisp = "0.1"
+rosetta-aisp-llm = "0.1"
 aisp = { version = "0.1", features = ["serde"] }
 
 # Async runtime
