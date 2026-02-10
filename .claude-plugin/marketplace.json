@@ -28,6 +28,16 @@
       },
       "source": "./plugins/captain-hook",
       "category": "development"
+    },
+    {
+      "name": "babelfish",
+      "description": "Bidirectional prose-to-AISP translation using gear-core and rosetta-aisp-llm",
+      "version": "0.1.0",
+      "author": {
+        "name": "epiphytic"
+      },
+      "source": "./plugins/babelfish",
+      "category": "development"
     }
   ]
 }

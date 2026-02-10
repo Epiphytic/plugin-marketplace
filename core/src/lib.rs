@@ -11,6 +11,7 @@ pub mod config;
 // Re-export rosetta-aisp types
 pub use rosetta_aisp::{
     AispConverter, ConversionOptions, ConversionResult, ConversionTier, RosettaStone, TokenStats,
+    get_all_categories, prose_to_symbol, symbol_to_prose, symbols_by_category,
 };
 
 // Re-export rosetta module for direct access
@@ -29,7 +30,7 @@ pub mod prelude {
     pub use anyhow::Result;
     pub use rosetta_aisp::{
         AispConverter, ConversionOptions, ConversionResult, ConversionTier, RosettaStone,
-        TokenStats,
+        TokenStats, get_all_categories, prose_to_symbol, symbol_to_prose, symbols_by_category,
     };
     pub use rosetta_aisp_llm::{
         convert_with_fallback, ClaudeFallback, ConversionOptionsExt, LlmProvider, LlmResult,
