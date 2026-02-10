@@ -34,7 +34,7 @@ plugins/<name>/
     "name": "epiphytic",
     "email": "dev@epiphytic.dev"
   },
-  "repository": "https://github.com/epiphytic/gear",
+  "repository": "https://github.com/epiphytic/plugin-marketplace",
   "license": "MIT",
   "keywords": ["gear", "category"],
   "commands": "./commands/",

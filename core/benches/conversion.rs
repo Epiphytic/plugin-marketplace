@@ -68,7 +68,7 @@ fn benchmark_tier_detection(c: &mut Criterion) {
 }
 
 fn benchmark_rosetta_lookup(c: &mut Criterion) {
-    use gear_core::aisp::rosetta::prose_to_symbol;
+    use rosetta_aisp::prose_to_symbol;
 
     let patterns = vec!["for all", "exists", "implies", "boolean", "unknown_word"];
 

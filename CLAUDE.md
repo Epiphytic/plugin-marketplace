@@ -35,6 +35,7 @@ Gear is a Claude Code plugin marketplace for enterprise-scale agentic workflows,
 | guide | External LLM validation for plans/code |
 | tango | Instance spawning (local and remote) |
 | infinite-improbability-drive | Meta-orchestration for impossible tasks |
+| captain-hook | Intelligent permission gating with 6-tier decision cascade (v0.1.0) |
 
 ## Core Commands
 

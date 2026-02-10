@@ -4,8 +4,7 @@
 //! Verifies that multiple prose → AISP → prose conversions
 //! preserve semantic meaning without drift.
 
-use gear_core::aisp::rosetta::RosettaStone;
-use gear_core::aisp::AispConverter;
+use gear_core::{AispConverter, RosettaStone};
 
 /// Complex document for testing semantic preservation
 const COMPLEX_DOCUMENT: &str = r#"

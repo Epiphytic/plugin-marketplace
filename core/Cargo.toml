@@ -6,7 +6,7 @@ rust-version = "1.90"
 authors = ["epiphytic"]
 description = "Core library for Gear plugin marketplace - AISP conversion with Claude SDK fallback"
 license = "MIT"
-repository = "https://github.com/epiphytic/gear"
+repository = "https://github.com/epiphytic/plugin-marketplace"
 
 [lib]
 name = "gear_core"
@@ -17,11 +17,10 @@ name = "gear-core"
 path = "src/main.rs"
 
 [dependencies]
-# AISP validation and symbols
+# AISP conversion with LLM fallback (from crates.io)
+rosetta-aisp = "0.1"
+rosetta-aisp-llm = "0.1"
 aisp = { version = "0.1", features = ["serde"] }
-
-# Claude SDK for LLM fallback
-claude-agent-sdk-rs = "0.6"
 
 # Async runtime
 tokio = { version = "1.49", features = ["full", "signal"] }
@@ -47,8 +46,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Utilities
 uuid = { version = "1.6", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-regex = "1.10"
-lazy_static = "1.4"
 
 # Configuration
 directories = "5.0"
