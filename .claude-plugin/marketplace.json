@@ -23,7 +23,7 @@
       "category": "development"
     },
     {
-      "name": "captain-hook",
+      "name": "hookwise",
       "description": "Intelligent permission gating for AI coding assistants with 6-tier decision cascade.",
       "version": "0.2.0",
       "author": {
@@ -31,7 +31,7 @@
       },
       "source": {
         "source": "github",
-        "repo": "Epiphytic/captain-hook"
+        "repo": "Epiphytic/hookwise"
       },
       "category": "development"
     },
