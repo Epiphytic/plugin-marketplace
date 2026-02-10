@@ -16,7 +16,10 @@
       "author": {
         "name": "epiphytic"
       },
-      "source": "./plugins/agent-fork-join",
+      "source": {
+        "source": "github",
+        "repo": "Epiphytic/agent-fork-join"
+      },
       "category": "development"
     },
     {
@@ -26,7 +29,10 @@
       "author": {
         "name": "epiphytic"
       },
-      "source": "./plugins/captain-hook",
+      "source": {
+        "source": "github",
+        "repo": "Epiphytic/captain-hook"
+      },
       "category": "development"
     },
     {
@@ -36,7 +42,7 @@
       "author": {
         "name": "epiphytic"
       },
-      "source": "./plugins/babelfish",
+      "source": "./plugin/babelfish",
       "category": "development"
     }
   ]
