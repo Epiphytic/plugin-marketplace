@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Claude Plugins"]
 description = "FIFO merge queue daemon for multi-agent git workflows"
 license = "MIT"
-repository = "https://github.com/badal-io/enterprise-agent-flows/tree/main/plugins/agent-fork-join"
+repository = "https://github.com/epiphytic/plugin-marketplace"
 
 [dependencies]
 # Async runtime

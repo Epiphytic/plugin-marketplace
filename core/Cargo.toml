@@ -6,7 +6,7 @@ rust-version = "1.90"
 authors = ["epiphytic"]
 description = "Core library for Gear plugin marketplace - AISP conversion with Claude SDK fallback"
 license = "MIT"
-repository = "https://github.com/epiphytic/gear"
+repository = "https://github.com/epiphytic/plugin-marketplace"
 
 [lib]
 name = "gear_core"
