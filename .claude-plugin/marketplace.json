@@ -25,7 +25,7 @@
     {
       "name": "hookwise",
       "description": "Intelligent permission gating for AI coding assistants with 6-tier decision cascade.",
-      "version": "0.2.0",
+      "version": "1.0.6",
       "author": {
         "name": "epiphytic"
       },
