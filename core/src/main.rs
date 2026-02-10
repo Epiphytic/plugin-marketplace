@@ -3,7 +3,7 @@
 //! Command-line interface for AISP conversion and gear utilities.
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use gear_core::prelude::*;
 use std::io::{self, Read};
 use std::path::PathBuf;
@@ -15,6 +15,33 @@ use std::path::PathBuf;
 struct Cli {
     #[command(subcommand)]
     command: Commands,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum TierArg {
+    Minimal,
+    Standard,
+    Full,
+    Auto,
+}
+
+impl TierArg {
+    fn to_conversion_tier(self) -> Option<gear_core::ConversionTier> {
+        match self {
+            TierArg::Minimal => Some(gear_core::ConversionTier::Minimal),
+            TierArg::Standard => Some(gear_core::ConversionTier::Standard),
+            TierArg::Full => Some(gear_core::ConversionTier::Full),
+            TierArg::Auto => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum OutputFormat {
+    /// Plain text output
+    Text,
+    /// JSON output with metadata
+    Json,
 }
 
 #[derive(Subcommand)]
@@ -33,9 +60,13 @@ enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
 
-        /// Conversion tier (minimal, standard, full, auto)
-        #[arg(short, long)]
-        tier: Option<String>,
+        /// Conversion tier
+        #[arg(short, long, value_enum)]
+        tier: Option<TierArg>,
+
+        /// Output format
+        #[arg(short = 'r', long, value_enum, default_value = "text")]
+        format: OutputFormat,
 
         /// Enable LLM fallback for low-confidence conversions
         #[arg(long)]
@@ -45,13 +76,13 @@ enum Commands {
         #[arg(long)]
         confidence_threshold: Option<f64>,
 
-        /// LLM model to use
+        /// LLM model to use (haiku, sonnet, opus)
         #[arg(long)]
         model: Option<String>,
 
-        /// Output as JSON
+        /// Use AISP symbolic prompt instead of English prompt
         #[arg(long)]
-        json: bool,
+        aisp_prompt: bool,
 
         /// Verbose output
         #[arg(short, long)]
@@ -86,9 +117,42 @@ enum Commands {
 
     /// Detect appropriate conversion tier
     Triage {
-        /// Input prose
+        /// Input prose (reads from stdin if not provided)
         #[arg(short, long)]
         input: Option<String>,
+    },
+
+    /// Look up a symbol for a prose pattern
+    Lookup {
+        /// Prose pattern to look up
+        pattern: String,
+    },
+
+    /// Look up prose for a symbol
+    Reverse {
+        /// AISP symbol to look up
+        symbol: String,
+    },
+
+    /// List all available symbols
+    Symbols {
+        /// Filter by category
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+
+    /// Show all available categories
+    Categories,
+
+    /// Perform round-trip conversion to test semantic preservation
+    RoundTrip {
+        /// Prose text to test (reads from stdin if not provided)
+        #[arg(short, long)]
+        input: Option<String>,
+
+        /// Number of round-trips to perform
+        #[arg(short = 'n', long, default_value = "5")]
+        rounds: usize,
     },
 
     /// Configuration management
@@ -138,26 +202,29 @@ async fn main() -> Result<()> {
             file,
             output,
             tier,
+            format,
             llm_fallback,
             confidence_threshold,
             model,
-            json,
+            aisp_prompt,
             verbose,
         } => {
             let config = Config::load()?;
             let prose = get_input(input, file)?;
 
             // Determine effective values (CLI > Config > Default)
-            let effective_tier = tier.unwrap_or(config.aisp.default_tier);
             let effective_threshold = confidence_threshold.unwrap_or(config.aisp.confidence_threshold);
             let effective_fallback = llm_fallback || config.aisp.enable_llm_fallback;
             let effective_model = model.or(Some(config.llm.default_model));
 
-            let tier_opt = match effective_tier.as_str() {
-                "minimal" => Some(gear_core::ConversionTier::Minimal),
-                "standard" => Some(gear_core::ConversionTier::Standard),
-                "full" => Some(gear_core::ConversionTier::Full),
-                _ => None, // auto-detect
+            let tier_opt = match tier {
+                Some(t) => t.to_conversion_tier(),
+                None => match config.aisp.default_tier.as_str() {
+                    "minimal" => Some(gear_core::ConversionTier::Minimal),
+                    "standard" => Some(gear_core::ConversionTier::Standard),
+                    "full" => Some(gear_core::ConversionTier::Full),
+                    _ => None, // auto-detect
+                },
             };
 
             let options = gear_core::ConversionOptionsExt {
@@ -165,26 +232,34 @@ async fn main() -> Result<()> {
                 confidence_threshold: Some(effective_threshold),
                 enable_llm_fallback: effective_fallback,
                 llm_model: effective_model,
+                use_aisp_prompt: aisp_prompt,
             };
 
             let result = gear_core::convert_with_fallback(&prose, Some(options)).await;
 
-            if json {
-                let json_output = serde_json::to_string_pretty(&result)?;
-                write_output(&json_output, output)?;
-            } else {
-                if verbose {
-                    eprintln!("Tier: {}", result.tier);
-                    eprintln!("Confidence: {:.2}", result.confidence);
-                    if result.used_fallback {
-                         eprintln!("Fallback: LLM used");
+            match format {
+                OutputFormat::Text => {
+                    if verbose {
+                        eprintln!("Tier: {}", result.tier);
+                        eprintln!("Confidence: {:.1}%", result.confidence * 100.0);
+                        eprintln!(
+                            "Tokens: {} → {} ({:.2}x)",
+                            result.tokens.input, result.tokens.output, result.tokens.ratio
+                        );
+                        if result.used_fallback {
+                            eprintln!("LLM fallback: used");
+                        }
+                        if !result.unmapped.is_empty() {
+                            eprintln!("Unmapped: {:?}", result.unmapped);
+                        }
+                        eprintln!("---");
                     }
-                    if !result.unmapped.is_empty() {
-                        eprintln!("Unmapped: {}", result.unmapped.join(", "));
-                    }
-                    eprintln!("---");
+                    write_output(&result.output, output)?;
                 }
-                write_output(&result.output, output)?;
+                OutputFormat::Json => {
+                    let json_output = serde_json::to_string_pretty(&result)?;
+                    write_output(&json_output, output)?;
+                }
             }
         }
 
@@ -199,7 +274,6 @@ async fn main() -> Result<()> {
             let result = gear_core::AispConverter::validate(&aisp);
 
             if json {
-                // Output validation result as JSON
                 println!(
                     "{}",
                     serde_json::json!({
@@ -222,14 +296,117 @@ async fn main() -> Result<()> {
         }
 
         Commands::Triage { input } => {
-            let prose = input.unwrap_or_else(|| {
-                let mut buf = String::new();
-                io::stdin().read_to_string(&mut buf).unwrap();
-                buf
-            });
+            let prose = match input {
+                Some(text) => text,
+                None => {
+                    let mut buf = String::new();
+                    io::stdin().read_to_string(&mut buf)?;
+                    buf
+                }
+            };
 
             let tier = gear_core::AispConverter::detect_tier(&prose);
             println!("Recommended tier: {}", tier);
+        }
+
+        Commands::Lookup { pattern } => {
+            match gear_core::prose_to_symbol(&pattern) {
+                Some(symbol) => println!("{}", symbol),
+                None => {
+                    eprintln!("No symbol found for pattern: {}", pattern);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::Reverse { symbol } => {
+            match gear_core::symbol_to_prose(&symbol) {
+                Some(prose) => println!("{}", prose),
+                None => {
+                    eprintln!("No prose found for symbol: {}", symbol);
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        Commands::Symbols { category } => {
+            match category {
+                Some(cat) => {
+                    let symbols = gear_core::symbols_by_category(&cat);
+                    if symbols.is_empty() {
+                        eprintln!("No symbols found for category: {}", cat);
+                        eprintln!("Available categories: {:?}", gear_core::get_all_categories());
+                        std::process::exit(1);
+                    }
+                    for symbol in symbols {
+                        if let Some(prose) = gear_core::symbol_to_prose(symbol) {
+                            println!("{} → {}", symbol, prose);
+                        } else {
+                            println!("{}", symbol);
+                        }
+                    }
+                }
+                None => {
+                    for category in gear_core::get_all_categories() {
+                        println!("\n=== {} ===", category);
+                        for symbol in gear_core::symbols_by_category(category) {
+                            if let Some(prose) = gear_core::symbol_to_prose(symbol) {
+                                println!("  {} → {}", symbol, prose);
+                            } else {
+                                println!("  {}", symbol);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Commands::Categories => {
+            for category in gear_core::get_all_categories() {
+                println!("{}", category);
+            }
+        }
+
+        Commands::RoundTrip { input, rounds } => {
+            let original = match input {
+                Some(text) => text,
+                None => {
+                    let mut buf = String::new();
+                    io::stdin().read_to_string(&mut buf)?;
+                    buf.trim().to_string()
+                }
+            };
+            let mut current = original.clone();
+
+            println!("Original: {}", original);
+            println!();
+
+            for i in 1..=rounds {
+                let (aisp, mapped_chars, _) = gear_core::RosettaStone::convert(&current);
+                let prose = gear_core::RosettaStone::to_prose(&aisp);
+                let similarity = gear_core::RosettaStone::semantic_similarity(&original, &prose);
+                let confidence = gear_core::RosettaStone::confidence(current.len(), mapped_chars);
+
+                println!(
+                    "Round {} (confidence: {:.1}%, similarity: {:.1}%):",
+                    i,
+                    confidence * 100.0,
+                    similarity * 100.0
+                );
+                println!("  AISP: {}", aisp);
+                println!("  Prose: {}", prose);
+                println!();
+
+                current = prose;
+            }
+
+            let final_similarity = gear_core::RosettaStone::semantic_similarity(&original, &current);
+            println!("Final semantic similarity: {:.1}%", final_similarity * 100.0);
+
+            if final_similarity < 0.30 {
+                eprintln!("Warning: Semantic drift exceeded acceptable threshold");
+                std::process::exit(1);
+            }
         }
 
         Commands::Config { action } => match action {
