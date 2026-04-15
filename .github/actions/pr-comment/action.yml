@@ -1,0 +1,121 @@
+name: "PR Comment"
+description: "Prints out a PR comment"
+inputs:
+  output_file:
+    required: true
+    description: "Output file path"
+    default: "output.txt"
+  summary_message:
+    required: true
+    description: "Summary message"
+    default: "Show Output"
+  target:
+    required: false
+    description: "Name of target being processed"
+    default: ""
+  comment_id:
+    required: false
+    description: "Unique identifier for this comment (used to find and update existing comments)"
+    default: ""
+runs:
+  using: "composite"
+  steps:
+    - id: "pr-comment"
+      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+      name: "PR Comment"
+      if: ${{ !cancelled() }}
+      env:
+        INPUT_OUTPUT_FILE: ${{ inputs.output_file }}
+        INPUT_SUMMARY_MESSAGE: ${{ inputs.summary_message }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_COMMENT_ID: ${{ inputs.comment_id }}
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          // Get Inputs
+          const output_file_path = core.getInput('output_file');
+          let summary_message = core.getInput('summary_message');
+          const target = core.getInput('target');
+          const comment_id = core.getInput('comment_id');
+
+          // Modify Summary message
+          if (target !== "") {
+            summary_message = `${summary_message} for ${target}`;
+          }
+
+          // Determine the match key for finding existing comments
+          let matchKey = summary_message;
+          if (comment_id !== "") {
+            // Use comment_id as a unique identifier (hidden in HTML comment)
+            matchKey = `<!-- pr-comment-id: ${comment_id} -->`;
+          }
+
+          // List comments and check if the bot has already commented
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComment = comments.find(comment => {
+            return comment.user.type === 'Bot' && comment.body.includes(matchKey);
+          });
+
+          // Read the output file if it exists and is not empty
+          const hasOutputFile = output_file_path && output_file_path.trim() !== "" && fs.existsSync(output_file_path);
+          const output_file_content = hasOutputFile ? fs.readFileSync(output_file_path, 'utf8') : "";
+          const output = hasOutputFile && output_file_content.length > 65000 ? output_file_content.substring(0, 65000) + " ..." : output_file_content;
+          const truncated_message = hasOutputFile && output_file_content.length > 65000 ? "Output is too long and was truncated. You can read full output in the Actions tab." : "";
+
+          // Prepare the comment body
+          // If summary_message contains markdown (starts with #), use it as the main content
+          // Otherwise, use the old format
+          const isMarkdownSummary = summary_message.trim().startsWith('#');
+
+          // Add comment ID marker if provided
+          const commentIdMarker = comment_id !== "" ? `<!-- pr-comment-id: ${comment_id} -->\n` : "";
+
+          // Build final output based on whether we have an output file
+          const final_output = hasOutputFile
+            ? (isMarkdownSummary ? `${commentIdMarker}${summary_message}
+
+          <details><summary>📋 View Raw Output</summary>
+
+          \`\`\`
+          ${output}
+          \`\`\`
+
+          </details>
+          ${truncated_message}
+          ` : `${commentIdMarker}#### Output Report
+
+
+          <details><summary>${summary_message}</summary>
+
+          \`\`\`
+          ${output}
+          \`\`\`
+
+          </details>
+          ${truncated_message}
+          `)
+            : `${commentIdMarker}${summary_message}`;
+
+          // Update the comment if the bot has already commented, otherwise create a new comment
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body: final_output,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: final_output,
+            });
+          }

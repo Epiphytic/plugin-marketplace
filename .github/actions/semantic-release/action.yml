@@ -1,0 +1,249 @@
+---
+name: semantic-release
+description: "Automate versioning and publishing to GitHub Releases"
+# Fixed heredoc delimiter conflicts in v0.3.1
+inputs:
+  token:
+    description: "GitHub token with permissions to create releases"
+    required: true
+    default: ${{ github.token }}
+  sha-prefix:
+    description: "Prefix for the SHA of the commit"
+    required: false
+    default: "-"
+  sha-suffix:
+    description: "Suffix for the SHA of the commit"
+    required: false
+    default: ""
+  should-create-release:
+    description: "Whether to create a release"
+    required: false
+    default: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+  release-branch:
+    description: "The branch to use for release analysis (used in dry-run mode)"
+    required: false
+    default: "main"
+  component-path:
+    description: "Optional component path for path-based tags (e.g., 'workflows/terraform-ci' or 'actions/semantic-release'). When set, tags will be created as '<component-path>/<tag-prefix>${version}'"
+    required: false
+    default: ""
+  tag-prefix:
+    description: "Optional tag prefix (default: 'v'). Combined with component-path if provided, resulting in tags like '<component-path>/<tag-prefix>${version}' or just '<tag-prefix>${version}'"
+    required: false
+    default: "v"
+  initial-version:
+    description: "Initial version for new components (default: '0.1.0'). Only used when no previous releases exist."
+    required: false
+    default: "0.1.0"
+outputs:
+  version:
+    description: "The version of the release"
+    value: ${{ steps.outputs.outputs.version }}
+  logs:
+    description: "The semantic-release logs"
+    value: ${{ steps.outputs.outputs.logs }}
+  changelog:
+    description: "The parsed changelog from semantic-release"
+    value: ${{ steps.outputs.outputs.changelog }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Checkout
+      uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+        token: ${{ inputs.token }}
+        # For PRs, checkout the head branch instead of the merge ref
+        # This allows semantic-release to validate the branch exists
+        ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
+
+    - name: Semantic Release Directory
+      shell: bash
+      run: ls ${{ github.action_path }}
+
+    - name: Setup Node.js
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+      with:
+        node-version: '24'
+
+    - name: Install Dependencies
+      shell: bash
+      run: npm ci --prefix ${{ github.action_path }}
+
+    - name: Normalize component path and tag prefix
+      id: normalize
+      shell: bash
+      run: |
+        COMPONENT_PATH="${{ inputs.component-path }}"
+        TAG_PREFIX_INPUT="${{ inputs.tag-prefix }}"
+
+        # Strip .github/ prefix if present (for tag compatibility)
+        # Git tags cannot start with dots
+        COMPONENT_PATH="${COMPONENT_PATH#.github/}"
+
+        # Build tag prefix (component-path/tag-prefix or just tag-prefix)
+        TAG_PREFIX="${COMPONENT_PATH}${COMPONENT_PATH:+/}${TAG_PREFIX_INPUT:-v}"
+
+        echo "component_path=$COMPONENT_PATH" >> $GITHUB_OUTPUT
+        echo "tag_prefix=$TAG_PREFIX" >> $GITHUB_OUTPUT
+        echo "Normalized component path: $COMPONENT_PATH"
+        echo "Tag prefix: $TAG_PREFIX"
+
+    - name: Create .releaserc.json
+      shell: bash
+      run: |
+        # For actual releases, use the release branch (main)
+        # For dry-run (PRs), use the current PR branch
+        if [[ "${{ inputs.should-create-release }}" == "true" ]]; then
+          IS_DRY_RUN="false"
+          BRANCH="${{ inputs.release-branch }}"
+        else
+          IS_DRY_RUN="true"
+          # For PRs, use the head branch; otherwise use current ref
+          BRANCH="${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}"
+        fi
+
+        ${{ github.action_path }}/scripts/create-releaserc.sh \
+          "${{ github.action_path }}/.releaserc.json" \
+          "$BRANCH" \
+          "${{ steps.normalize.outputs.tag_prefix }}" \
+          "$IS_DRY_RUN" \
+          "${{ steps.normalize.outputs.component_path }}" \
+          "${{ github.action_path }}"
+
+    - name: Debug .releaserc.json
+      shell: bash
+      run: |
+        echo "=== Generated .releaserc.json ==="
+        cat .releaserc.json
+        echo "================================="
+
+    - name: Check for existing version
+      id: existing-version
+      shell: bash
+      run: |
+        if CURRENT_VERSION=$(git describe --contains 2>/dev/null); then
+          echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Create initial version tag if needed
+      shell: bash
+      run: |
+        ${{ github.action_path }}/scripts/create-initial-tag.sh \
+          "${{ steps.normalize.outputs.tag_prefix }}" \
+          "${{ inputs.initial-version }}" \
+          "${{ steps.normalize.outputs.component_path }}"
+
+    - name: Run Semantic Release
+      if: steps.existing-version.outputs.exists == 'false'
+      id: semantic-release
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        GITHUB_TOKEN: ${{ inputs.token }}
+      run: |
+        OUTPUT_FILE=$(mktemp)
+
+        # Pass PR branch to script for git/env setup
+        PR_BRANCH=""
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          PR_BRANCH="${{ github.head_ref }}"
+        fi
+
+        set +e
+        ${{ github.action_path }}/scripts/run-semantic-release.sh \
+          "${{ github.action_path }}" \
+          "${{ inputs.should-create-release }}" \
+          "$OUTPUT_FILE" \
+          "$PR_BRANCH"
+        EXIT_CODE=$?
+        set -e
+
+        # Read output and set as output variable
+        # Use a unique delimiter to avoid conflicts with semantic-release output
+        echo "logs<<EOF_LOGS_$$" >> $GITHUB_OUTPUT
+        cat "$OUTPUT_FILE" >> $GITHUB_OUTPUT
+        echo "EOF_LOGS_$$" >> $GITHUB_OUTPUT
+
+        echo "exit_code=$EXIT_CODE" >> $GITHUB_OUTPUT
+        echo "output_file=$OUTPUT_FILE" >> $GITHUB_OUTPUT
+
+        # For actual releases, fail if semantic-release failed
+        if [[ "${{ inputs.should-create-release }}" == "true" ]] && [[ $EXIT_CODE -ne 0 ]]; then
+          echo "Semantic release failed with exit code $EXIT_CODE"
+          cat "$OUTPUT_FILE"
+          exit $EXIT_CODE
+        fi
+
+    - name: Resolve Version
+      id: version
+      shell: bash
+      run: |
+        # If version already exists on this commit, use it
+        if [[ "${{ steps.existing-version.outputs.exists }}" == "true" ]]; then
+          VERSION="${{ steps.existing-version.outputs.version }}"
+          echo "Using existing version: $VERSION"
+          echo "version<<EOF_VERSION_EXISTS_$$" >> $GITHUB_OUTPUT
+          echo "$VERSION" >> $GITHUB_OUTPUT
+          echo "EOF_VERSION_EXISTS_$$" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Use the output file from semantic-release step
+        OUTPUT_FILE="${{ steps.semantic-release.outputs.output_file }}"
+
+        VERSION=$(${{ github.action_path }}/scripts/resolve-version.sh \
+          "$OUTPUT_FILE" \
+          "${{ steps.normalize.outputs.component_path }}" \
+          "${{ steps.normalize.outputs.tag_prefix }}" \
+          "${{ inputs.sha-prefix }}" \
+          "${{ inputs.sha-suffix }}" \
+          "${{ github.sha }}")
+
+        echo "version<<EOF_VERSION_RESOLVED_$$" >> $GITHUB_OUTPUT
+        echo "$VERSION" >> $GITHUB_OUTPUT
+        echo "EOF_VERSION_RESOLVED_$$" >> $GITHUB_OUTPUT
+
+    - name: Write Logs and Release Notes to Files
+      id: write-files
+      shell: bash
+      env:
+        SR_LOGS: ${{ steps.semantic-release.outputs.logs }}
+      run: |
+        # Write full logs to a file
+        LOGS_FILE="release-logs.txt"
+        echo "$SR_LOGS" > "$LOGS_FILE"
+        echo "logs_file=$LOGS_FILE" >> $GITHUB_OUTPUT
+
+        # Write release notes to a file
+        CHANGELOG_FILE="release-notes.md"
+        # Extract release notes from semantic-release logs
+        # Look for the section that starts with "Release note for version"
+        echo "$SR_LOGS" | sed -n '/^.*› ℹ  Release note for version/,$p' | tail -n +2 > "$CHANGELOG_FILE"
+        echo "changelog_file=$CHANGELOG_FILE" >> $GITHUB_OUTPUT
+
+        echo "=== Logs Written to $LOGS_FILE ==="
+        echo "=== Release Notes Written to $CHANGELOG_FILE ==="
+        cat "$CHANGELOG_FILE"
+        echo "================================================"
+
+    - name: Set Outputs
+      id: outputs
+      shell: bash
+      env:
+        SR_VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # Output version
+        echo "version=${SR_VERSION}" >> $GITHUB_OUTPUT
+
+        # Output file paths instead of content
+        LOGS_FILE="${{ steps.write-files.outputs.logs_file }}"
+        CHANGELOG_FILE="${{ steps.write-files.outputs.changelog_file }}"
+
+        echo "logs=$LOGS_FILE" >> $GITHUB_OUTPUT
+        echo "changelog=$CHANGELOG_FILE" >> $GITHUB_OUTPUT

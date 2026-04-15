@@ -1,0 +1,160 @@
+name: Check External Plugin Versions
+
+on:
+  schedule:
+    - cron: '0 8 * * *' # Daily at 8am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check-versions:
+    name: Check External Plugin Versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+
+      - name: Install yq
+        run: |
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+
+      - name: Check external plugin versions
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          UPDATES_FOUND=false
+          SUMMARY=""
+
+          # Get all community plugins from registry
+          PLUGIN_COUNT=$(yq '[.plugins[] | select(.source == "community")] | length' registry.yaml)
+
+          for ((i = 0; i < PLUGIN_COUNT; i++)); do
+            NAME=$(yq "[.plugins[] | select(.source == \"community\")].[${i}].name" registry.yaml)
+            REPO=$(yq "[.plugins[] | select(.source == \"community\")].[${i}].repository" registry.yaml)
+            CURRENT_VERSION=$(yq "[.plugins[] | select(.source == \"community\")].[${i}].version" registry.yaml)
+
+            if [[ "$REPO" == "null" ]] || [[ -z "$REPO" ]]; then
+              continue
+            fi
+
+            # Extract owner/repo from URL
+            OWNER_REPO=$(echo "$REPO" | sed 's|https://github.com/||' | sed 's|\.git$||' | sed 's|/$||')
+
+            # Get the latest commit SHA on the default branch
+            LATEST_SHA=""
+            if COMMITS_JSON=$(gh api "repos/${OWNER_REPO}/commits?per_page=1" 2>/dev/null); then
+              LATEST_SHA=$(echo "$COMMITS_JSON" | jq -r '.[0].sha // empty' 2>/dev/null || echo "")
+            fi
+            SHORT_SHA="${LATEST_SHA:0:12}"
+
+            if [[ -z "$LATEST_SHA" ]]; then
+              echo "WARNING: Could not fetch latest commit for $NAME ($OWNER_REPO)"
+              continue
+            fi
+
+            # Try to get the latest release tag version
+            LATEST_TAG=""
+            if RELEASE_JSON=$(gh api "repos/${OWNER_REPO}/releases/latest" 2>/dev/null); then
+              LATEST_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name // empty' 2>/dev/null || echo "")
+            fi
+
+            # Use tag if available, otherwise use short SHA
+            if [[ -n "$LATEST_TAG" ]]; then
+              NEW_VERSION="$LATEST_TAG"
+            else
+              NEW_VERSION="$SHORT_SHA"
+            fi
+
+            if [[ "$CURRENT_VERSION" != "$NEW_VERSION" ]] && [[ "$CURRENT_VERSION" == "latest" || "$CURRENT_VERSION" != "$NEW_VERSION" ]]; then
+              echo "UPDATE: $NAME ($CURRENT_VERSION -> $NEW_VERSION)"
+              UPDATES_FOUND=true
+              SUMMARY="${SUMMARY}\n- **${NAME}**: \`${CURRENT_VERSION}\` -> \`${NEW_VERSION}\` (${OWNER_REPO})"
+
+              # Update the version in registry.yaml (use env var for safe interpolation)
+              export YQ_NEW_VERSION="$NEW_VERSION"
+              yq -i "(.plugins[] | select(.name == \"${NAME}\" and .source == \"community\")).version = strenv(YQ_NEW_VERSION)" registry.yaml
+            else
+              echo "OK: $NAME is up to date ($CURRENT_VERSION)"
+            fi
+          done
+
+          echo "updates_found=$UPDATES_FOUND" >> $GITHUB_ENV
+
+          # Write summary to file for PR body
+          echo -e "$SUMMARY" > /tmp/update-summary.txt
+
+      - name: Sync versions to marketplace.json
+        if: env.updates_found == 'true'
+        run: |
+          # For each community plugin in registry, update the version in marketplace.json
+          PLUGIN_COUNT=$(yq '[.plugins[] | select(.source == "community")] | length' registry.yaml)
+
+          for ((i = 0; i < PLUGIN_COUNT; i++)); do
+            NAME=$(yq "[.plugins[] | select(.source == \"community\")].[${i}].name" registry.yaml)
+            VERSION=$(yq "[.plugins[] | select(.source == \"community\")].[${i}].version" registry.yaml)
+
+            # Update marketplace.json if this plugin exists there
+            if jq -e --arg name "$NAME" '.plugins[] | select(.name == $name)' .claude-plugin/marketplace.json >/dev/null 2>&1; then
+              jq --arg name "$NAME" --arg version "$VERSION" \
+                '(.plugins[] | select(.name == $name) | .version) = $version' \
+                .claude-plugin/marketplace.json > tmp.json
+              mv tmp.json .claude-plugin/marketplace.json
+              echo "Synced $NAME@$VERSION to marketplace.json"
+            fi
+          done
+
+      - name: Create or update PR
+        if: env.updates_found == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="chore/update-external-plugin-versions"
+          SUMMARY=$(cat /tmp/update-summary.txt)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if branch exists on remote
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH"
+            git checkout "$BRANCH"
+            git reset --hard origin/main
+          else
+            git checkout -b "$BRANCH"
+          fi
+
+          git add registry.yaml .claude-plugin/marketplace.json
+          git commit -m "chore: update external plugin versions"
+
+          git push -u origin "$BRANCH" --force-with-lease
+
+          # Check if PR already exists
+          EXISTING_PR=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number' 2>/dev/null || echo "")
+
+          PR_BODY="$(cat <<PREOF
+          ## External Plugin Version Updates
+
+          Automated daily check found new versions for external plugins:
+
+          ${SUMMARY}
+
+          ---
+          *This PR was automatically generated by the external version check workflow.*
+          PREOF
+          )"
+
+          if [[ -n "$EXISTING_PR" ]]; then
+            gh pr edit "$EXISTING_PR" --body "$PR_BODY"
+            echo "Updated existing PR #$EXISTING_PR"
+          else
+            gh pr create \
+              --title "chore: update external plugin versions" \
+              --body "$PR_BODY" \
+              --base main \
+              --head "$BRANCH"
+            echo "Created new PR"
+          fi

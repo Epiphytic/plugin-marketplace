@@ -1,0 +1,55 @@
+name: Generate Release Summary
+description: Generate a release summary from semantic-release logs
+
+inputs:
+  version:
+    description: "The version from semantic-release (without tag prefix)"
+    required: true
+  component-path:
+    description: "Optional component path for path-based tags (e.g., 'workflows/terraform-ci')"
+    required: false
+    default: ""
+  tag-prefix:
+    description: "Tag prefix (default: 'v')"
+    required: false
+    default: "v"
+  base-branch:
+    description: "Base branch to compare against"
+    required: false
+    default: "main"
+  logs-file:
+    description: "Path to semantic-release logs file"
+    required: false
+    default: "release-logs.txt"
+  output-file:
+    description: "Path to write summary output"
+    required: false
+    default: "release-summary.md"
+
+outputs:
+  summary:
+    description: "The generated release summary"
+    value: ${{ steps.generate.outputs.summary }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate summary
+      id: generate
+      shell: bash
+      run: |
+        # Run the script to generate the summary
+        "${{ github.action_path }}/generate-summary.sh" \
+          "${{ inputs.version }}" \
+          "${{ inputs.component-path }}" \
+          "${{ inputs.tag-prefix }}" \
+          "${{ inputs.base-branch }}" \
+          "${{ inputs.logs-file }}" \
+          "${{ inputs.output-file }}"
+
+        # Output the summary for use in subsequent steps
+        {
+          echo 'summary<<SUMMARY_EOF'
+          cat "${{ inputs.output-file }}"
+          echo 'SUMMARY_EOF'
+        } >> $GITHUB_OUTPUT

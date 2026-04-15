@@ -1,0 +1,44 @@
+{
+  "branches": ["BRANCH_PLACEHOLDER"],
+  "tagFormat": "TAG_PREFIX_PLACEHOLDER${version}",
+  "plugins": [
+    [
+      "ACTION_PATH_PLACEHOLDER/lib/filtered-unsquash.js",
+      {
+        "componentPath": "COMPONENT_PATH_PLACEHOLDER",
+        "commitAnalyzerConfig": {
+          "releaseRules": [
+            { "type": "feat", "release": "minor" },
+            { "breaking": true, "release": "major" },
+            { "revert": true, "release": "patch" },
+            { "scope": "no-release", "release": false },
+            { "type": "*", "release": "patch" },
+            { "type": "**", "release": "patch" },
+            { "message": "*", "release": "patch" },
+            { "message": "**", "release": "patch" }
+          ],
+          "parserOpts": {
+            "noteKeywords": ["BREAKING CHANGE", "BREAKING CHANGES"]
+          }
+        },
+        "notesGeneratorConfig": {
+          "preset": "angular",
+          "parserOpts": {
+            "noteKeywords": ["BREAKING CHANGE", "BREAKING CHANGES"]
+          },
+          "writerOpts": {
+            "commitsSort": ["subject", "scope"]
+          }
+        }
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "echo NEXT_RELEASE_VERSION=${nextRelease.version} >> $GITHUB_ENV"
+      }
+    ],
+    "@semantic-release/github",
+    "@semantic-release/git"
+  ]
+}

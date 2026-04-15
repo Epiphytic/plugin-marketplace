@@ -10,40 +10,30 @@
   "repository": "https://github.com/epiphytic/plugin-marketplace",
   "plugins": [
     {
-      "name": "agent-fork-join",
-      "description": "Multi-agent git workflow orchestrator with isolated worktrees, FIFO merge queue, and automated PR lifecycle management.",
-      "version": "0.5.0",
-      "author": {
-        "name": "epiphytic"
-      },
+      "name": "brains",
+      "description": "Structured multi-LLM development workflow with research, planning, and implementation phases",
       "source": {
         "source": "github",
-        "repo": "Epiphytic/agent-fork-join"
+        "repo": "Epiphytic/brains"
       },
-      "category": "development"
-    },
-    {
-      "name": "hookwise",
-      "description": "Intelligent permission gating for AI coding assistants with 6-tier decision cascade.",
-      "version": "1.0.6",
       "author": {
-        "name": "epiphytic"
+        "name": "Epiphytic"
       },
-      "source": {
-        "source": "github",
-        "repo": "Epiphytic/hookwise"
-      },
-      "category": "development"
+      "category": "productivity",
+      "version": "c42f05341c9c"
     },
     {
       "name": "babelfish",
-      "description": "Bidirectional prose-to-AISP translation using gear-core and rosetta-aisp-llm",
-      "version": "0.1.0",
-      "author": {
-        "name": "epiphytic"
+      "description": "Prompt translation to AISP format for machine-readable documentation",
+      "source": {
+        "source": "github",
+        "repo": "Epiphytic/babelfish"
       },
-      "source": "./plugin/babelfish",
-      "category": "development"
+      "author": {
+        "name": "Epiphytic"
+      },
+      "category": "productivity",
+      "version": "latest"
     }
   ]
 }

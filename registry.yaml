@@ -1,0 +1,23 @@
+plugins:
+  - name: brains
+    description: Structured multi-LLM development workflow with research, planning, and implementation phases
+    version: "c42f05341c9c"
+    source: community
+    category: productivity
+    path: null
+    repository: https://github.com/Epiphytic/brains
+    install: claude plugin install brains@brains
+    maintainer: Epiphytic
+    status: active
+    default_install: required
+  - name: babelfish
+    description: Prompt translation to AISP format for machine-readable documentation
+    version: "latest"
+    source: community
+    category: productivity
+    path: null
+    repository: https://github.com/Epiphytic/babelfish
+    install: claude plugin install babelfish@babelfish
+    maintainer: Epiphytic
+    status: active
+    default_install: optional

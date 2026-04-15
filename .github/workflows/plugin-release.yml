@@ -1,0 +1,260 @@
+name: Plugin Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "plugins/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "plugins/**"
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: 'Plugin to release (leave empty for all changed)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  detect-changes:
+    name: Detect Changed Plugins
+    runs-on: ubuntu-latest
+    outputs:
+      plugins: ${{ steps.detect.outputs.plugins }}
+      has-changes: ${{ steps.detect.outputs.has-changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed plugins
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+          MANUAL_PLUGIN: ${{ github.event.inputs.plugin }}
+        run: |
+          # Find local plugin directories under plugins/
+          PLUGIN_DIRS=""
+          if [ -d plugins ]; then
+            for dir in plugins/*/; do
+              if [ -f "$dir/.claude-plugin/plugin.json" ]; then
+                PLUGIN_DIRS="$PLUGIN_DIRS $(basename "$dir")"
+              fi
+            done
+          fi
+
+          CHANGED_PLUGINS="[]"
+
+          # For workflow_dispatch, use specified plugin or all plugins
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ -n "$MANUAL_PLUGIN" ]]; then
+              for plugin_dir in $PLUGIN_DIRS; do
+                PLUGIN_NAME=$(jq -r '.name' "plugins/$plugin_dir/.claude-plugin/plugin.json" 2>/dev/null || echo "$plugin_dir")
+                if [[ "$PLUGIN_NAME" == "$MANUAL_PLUGIN" ]] || [[ "$plugin_dir" == "$MANUAL_PLUGIN" ]]; then
+                  PLUGIN_VERSION=$(jq -r '.version' "plugins/$plugin_dir/.claude-plugin/plugin.json" 2>/dev/null || echo "0.0.0")
+                  CHANGED_PLUGINS=$(echo "$CHANGED_PLUGINS" | jq --arg dir "$plugin_dir" --arg name "$PLUGIN_NAME" --arg version "$PLUGIN_VERSION" \
+                    '. + [{"dir": $dir, "name": $name, "version": $version}]')
+                  break
+                fi
+              done
+            else
+              for plugin_dir in $PLUGIN_DIRS; do
+                if [ -f "plugins/$plugin_dir/.claude-plugin/plugin.json" ]; then
+                  PLUGIN_NAME=$(jq -r '.name' "plugins/$plugin_dir/.claude-plugin/plugin.json" 2>/dev/null || echo "$plugin_dir")
+                  PLUGIN_VERSION=$(jq -r '.version' "plugins/$plugin_dir/.claude-plugin/plugin.json" 2>/dev/null || echo "0.0.0")
+                  CHANGED_PLUGINS=$(echo "$CHANGED_PLUGINS" | jq --arg dir "$plugin_dir" --arg name "$PLUGIN_NAME" --arg version "$PLUGIN_VERSION" \
+                    '. + [{"dir": $dir, "name": $name, "version": $version}]')
+                fi
+              done
+            fi
+          else
+            # For PRs, compare against base branch
+            if [[ "$EVENT_NAME" == "pull_request" ]]; then
+              BASE_SHA="$PR_BASE_SHA"
+            else
+              BASE_SHA="$PUSH_BEFORE_SHA"
+            fi
+
+            # If BASE_SHA is empty or all zeros (initial commit), use empty tree
+            if [[ -z "$BASE_SHA" ]] || [[ "$BASE_SHA" == "0000000000000000000000000000000000000000" ]]; then
+              BASE_SHA=$(git hash-object -t tree /dev/null)
+            fi
+
+            for plugin_dir in $PLUGIN_DIRS; do
+              if [ -f "plugins/$plugin_dir/.claude-plugin/plugin.json" ] && git diff --name-only "$BASE_SHA" HEAD | grep -q "^plugins/$plugin_dir/"; then
+                PLUGIN_NAME=$(jq -r '.name' "plugins/$plugin_dir/.claude-plugin/plugin.json" 2>/dev/null || echo "$plugin_dir")
+                PLUGIN_VERSION=$(jq -r '.version' "plugins/$plugin_dir/.claude-plugin/plugin.json" 2>/dev/null || echo "0.0.0")
+
+                CHANGED_PLUGINS=$(echo "$CHANGED_PLUGINS" | jq --arg dir "$plugin_dir" --arg name "$PLUGIN_NAME" --arg version "$PLUGIN_VERSION" \
+                  '. + [{"dir": $dir, "name": $name, "version": $version}]')
+              fi
+            done
+          fi
+
+          echo "Changed plugins: $CHANGED_PLUGINS"
+
+          if [[ "$CHANGED_PLUGINS" == "[]" ]]; then
+            echo "has-changes=false" >> $GITHUB_OUTPUT
+            echo "plugins=[]" >> $GITHUB_OUTPUT
+          else
+            echo "has-changes=true" >> $GITHUB_OUTPUT
+            echo "plugins=$(echo "$CHANGED_PLUGINS" | jq -c '.')" >> $GITHUB_OUTPUT
+          fi
+
+  release:
+    name: Release ${{ matrix.plugin.name }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        plugin: ${{ fromJson(needs.detect-changes.outputs.plugins) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+
+      - name: Semantic Release
+        id: semantic-release
+        uses: ./.github/actions/semantic-release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          should-create-release: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+          release-branch: main
+          component-path: plugins/${{ matrix.plugin.dir }}
+          tag-prefix: v
+
+      - name: Generate Release Summary
+        if: github.event_name == 'pull_request'
+        id: release-summary
+        uses: ./.github/actions/semantic-release-summary
+        with:
+          version: ${{ steps.semantic-release.outputs.version }}
+          component-path: plugins/${{ matrix.plugin.dir }}
+          tag-prefix: v
+          base-branch: main
+          logs-file: ${{ steps.semantic-release.outputs.changelog }}
+
+      - name: Comment Release Preview
+        if: github.event_name == 'pull_request'
+        uses: ./.github/actions/pr-comment
+        with:
+          summary_message: ${{ steps.release-summary.outputs.summary }}
+          comment_id: release-preview-${{ matrix.plugin.name }}
+
+      - name: Check if release was published
+        id: check-release
+        env:
+          VERSION: ${{ steps.semantic-release.outputs.version }}
+        run: |
+          if [[ -n "$VERSION" ]] && [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "published=true" >> $GITHUB_OUTPUT
+            echo "Release version: $VERSION"
+          else
+            echo "published=false" >> $GITHUB_OUTPUT
+            echo "No new release (version: $VERSION) - interim or placeholder version"
+          fi
+
+      - name: Create Plugin Package
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.check-release.outputs.published == 'true'
+        id: package
+        env:
+          VERSION: ${{ steps.semantic-release.outputs.version }}
+          PLUGIN_NAME: ${{ matrix.plugin.name }}
+          PLUGIN_DIR: ${{ matrix.plugin.dir }}
+        run: |
+          FULL_PLUGIN_DIR="plugins/$PLUGIN_DIR"
+
+          # Update version in plugin.json
+          jq --arg v "$VERSION" '.version = $v' "$FULL_PLUGIN_DIR/.claude-plugin/plugin.json" > tmp.json
+          mv tmp.json "$FULL_PLUGIN_DIR/.claude-plugin/plugin.json"
+
+          # Create tarball
+          TARBALL_NAME="${PLUGIN_NAME}-${VERSION}.tar.gz"
+          tar -czvf "$TARBALL_NAME" -C plugins "$PLUGIN_DIR"
+
+          echo "tarball=$TARBALL_NAME" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload Release Artifact
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.check-release.outputs.published == 'true'
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: ${{ matrix.plugin.name }}-${{ steps.package.outputs.version }}
+          path: ${{ steps.package.outputs.tarball }}
+
+      - name: Attach to GitHub Release
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.check-release.outputs.published == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLUGIN_DIR: ${{ matrix.plugin.dir }}
+          VERSION: ${{ steps.package.outputs.version }}
+          TARBALL: ${{ steps.package.outputs.tarball }}
+        run: |
+          TAG="plugins/${PLUGIN_DIR}/v${VERSION}"
+          echo "Uploading $TARBALL to release $TAG"
+          gh release upload "$TAG" "$TARBALL" --clobber
+
+  update-marketplace:
+    name: Update Marketplace Versions
+    needs: [detect-changes, release]
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && needs.detect-changes.outputs.has-changes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Pull latest changes
+        run: git pull origin main
+
+      - name: Update marketplace.json versions
+        env:
+          PLUGINS: ${{ needs.detect-changes.outputs.plugins }}
+        run: |
+          for row in $(echo "$PLUGINS" | jq -r '.[] | @base64'); do
+            _jq() {
+              echo "$row" | base64 --decode | jq -r "${1}"
+            }
+
+            PLUGIN_DIR=$(_jq '.dir')
+            PLUGIN_NAME=$(_jq '.name')
+
+            # Get the latest version from plugin.json
+            LATEST_VERSION=$(jq -r '.version' "plugins/$PLUGIN_DIR/.claude-plugin/plugin.json")
+
+            # Update marketplace.json
+            jq --arg name "$PLUGIN_NAME" --arg version "$LATEST_VERSION" \
+              '(.plugins[] | select(.name == $name) | .version) = $version' \
+              .claude-plugin/marketplace.json > tmp.json
+            mv tmp.json .claude-plugin/marketplace.json
+          done
+
+      - name: Commit marketplace updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet .claude-plugin/marketplace.json; then
+            echo "No marketplace changes to commit"
+          else
+            git add .claude-plugin/marketplace.json
+            git commit -m "chore: update marketplace versions [skip ci]"
+            git push
+          fi
