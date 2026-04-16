@@ -1,7 +1,7 @@
 plugins:
   - name: brains
     description: Structured multi-LLM development workflow with research, planning, and implementation phases
-    version: "c42f05341c9c"
+    version: "8136390f922f"
     source: community
     category: productivity
     path: null
