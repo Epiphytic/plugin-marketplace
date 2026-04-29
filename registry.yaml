@@ -1,7 +1,7 @@
 plugins:
   - name: brains
     description: Structured multi-LLM development workflow with research, planning, and implementation phases
-    version: "d7ce35e72640"
+    version: "v0.5.0"
     source: community
     category: productivity
     path: null
@@ -10,6 +10,17 @@ plugins:
     maintainer: Epiphytic
     status: active
     default_install: required
+  - name: hotskills
+    description: Discover, activate, and invoke Claude Code skills with security gating. Search skills.sh, activate with audit-based risk filtering, and inject skill context into your sessions automatically.
+    version: "v0.1.4"
+    source: community
+    category: productivity
+    path: null
+    repository: https://github.com/Epiphytic/hotskills
+    install: claude plugin install hotskills@hotskills
+    maintainer: Epiphytic
+    status: active
+    default_install: optional
   - name: babelfish
     description: Prompt translation to AISP format for machine-readable documentation
     version: "latest"
