@@ -14,11 +14,11 @@
       "description": "Structured multi-LLM development workflow with research, planning, and implementation phases",
       "source": {
         "source": "github",
-        "repo": "Epiphytic/brains",
+        "repo": "https://github.com/Epiphytic/brains",
         "ref": "v0.5.0"
       },
       "author": {
-        "name": "Epiphytic"
+        "name": "Liam Helmer"
       },
       "category": "productivity",
       "version": "0.5.0"
@@ -28,11 +28,11 @@
       "description": "Discover, activate, and invoke Claude Code skills with security gating. Search skills.sh, activate with audit-based risk filtering, and inject skill context into your sessions automatically.",
       "source": {
         "source": "github",
-        "repo": "Epiphytic/hotskills",
+        "repo": "https://github.com/Epiphytic/hotskills",
         "ref": "v0.1.4"
       },
       "author": {
-        "name": "Epiphytic"
+        "name": "Liam Helmer"
       },
       "category": "productivity",
       "version": "0.1.4"
@@ -42,10 +42,10 @@
       "description": "Prompt translation to AISP format for machine-readable documentation",
       "source": {
         "source": "github",
-        "repo": "Epiphytic/babelfish"
+        "repo": "https://github.com/Epiphytic/babelfish"
       },
       "author": {
-        "name": "Epiphytic"
+        "name": "Liam Helmer"
       },
       "category": "productivity",
       "version": "latest"
