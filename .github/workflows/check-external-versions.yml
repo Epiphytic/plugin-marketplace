@@ -102,11 +102,16 @@ jobs:
 
             # Update marketplace.json if this plugin exists there
             if jq -e --arg name "$NAME" '.plugins[] | select(.name == $name)' .claude-plugin/marketplace.json >/dev/null 2>&1; then
-              jq --arg name "$NAME" --arg version "$VERSION" \
-                '(.plugins[] | select(.name == $name) | .version) = $version' \
+              # Also update source.ref to the matching git tag (with leading 'v') if
+              # the entry uses a github source AND already has a ref pinned.
+              # Tags are GitHub's canonical name; preserve the 'v' prefix here.
+              REF_TAG="v${VERSION}"
+              jq --arg name "$NAME" --arg version "$VERSION" --arg ref "$REF_TAG" \
+                '(.plugins[] | select(.name == $name) | .version) = $version
+                 | (.plugins[] | select(.name == $name and (.source.source == "github") and (.source.ref != null)) | .source.ref) = $ref' \
                 .claude-plugin/marketplace.json > tmp.json
               mv tmp.json .claude-plugin/marketplace.json
-              echo "Synced $NAME@$VERSION to marketplace.json"
+              echo "Synced $NAME@$VERSION (ref=$REF_TAG) to marketplace.json"
             fi
           done
 

@@ -14,7 +14,8 @@
       "description": "Structured multi-LLM development workflow with research, planning, and implementation phases",
       "source": {
         "source": "github",
-        "repo": "Epiphytic/brains"
+        "repo": "Epiphytic/brains",
+        "ref": "v0.5.0"
       },
       "author": {
         "name": "Epiphytic"
@@ -27,7 +28,8 @@
       "description": "Discover, activate, and invoke Claude Code skills with security gating. Search skills.sh, activate with audit-based risk filtering, and inject skill context into your sessions automatically.",
       "source": {
         "source": "github",
-        "repo": "Epiphytic/hotskills"
+        "repo": "Epiphytic/hotskills",
+        "ref": "v0.1.4"
       },
       "author": {
         "name": "Epiphytic"
