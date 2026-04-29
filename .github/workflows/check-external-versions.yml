@@ -60,6 +60,9 @@ jobs:
             LATEST_TAG=""
             if RELEASE_JSON=$(gh api "repos/${OWNER_REPO}/releases/latest" 2>/dev/null); then
               LATEST_TAG=$(echo "$RELEASE_JSON" | jq -r '.tag_name // empty' 2>/dev/null || echo "")
+              # Strip leading 'v' to match the bare-semver convention used by
+              # plugin.json files across the marketplace (e.g. "0.5.0" not "v0.5.0").
+              LATEST_TAG="${LATEST_TAG#v}"
             fi
 
             # Use tag if available, otherwise use short SHA
